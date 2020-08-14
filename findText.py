@@ -3,9 +3,8 @@ os.environ['OPENCV_IO_ENABLE_JASPER']='True' #has to be set before importing cv2
 import cv2
 import numpy as np 
 
-#for numpy array methods
-ROW = 0
-COLUMN = 1
+MIN_COLUMN_WIDTH=450
+MIN_COLUMN_HEIGHT=100
 
 """
 # Cross-shaped Kernel
@@ -151,10 +150,12 @@ def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
         currentHierarchy = component[1]
         x,y,w,h = cv2.boundingRect(contour)
         #TODO check if boundbox is COMPLETELY within already found bounding box? This could remove duplicate boxes within columns?
-        if currentHierarchy[3] < 0: #outer most contour
-            if h > 100 and w > 450: #in general columns will be about 450 pixels wide, and we should make sure we aren't getting crazy small ones, 
+        parentContour = currentHierarchy[3] #the structure of the contour hierarchy is (next, previous, first child, parent)
+        doesNotExist = -1 #this is how openCV defines that the contour hierarchy item doesn't exist
+        if parentContour == doesNotExist: #outer most contour
+            if h > MIN_COLUMN_HEIGHT and w > MIN_COLUMN_WIDTH: #in general columns will be about 450 pixels wide, and we should make sure we aren't getting crazy small ones, 
                                     #so minimum of 100 pixels tall
-                filepath = os.path.join(directory, '%s_x%s_y%s_w%s_h%s-next%s_prev%s_child%s_parent%s.tiff' % (lccn, x,y,w,h, currentHierarchy[0], currentHierarchy[1], currentHierarchy[2], currentHierarchy[3]))
+                filepath = os.path.join(directory, '%s_x%s_y%s_w%s_h%s.tiff' % (lccn, x,y,w,h))
                 ystart = max(y-padding, 0)
                 yend = min(y+h+padding, img.shape[0])
                 xstart = max(x-padding, 0)
