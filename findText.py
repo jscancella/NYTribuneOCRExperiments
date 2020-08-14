@@ -35,19 +35,21 @@ def blankOutTopOfImage(img, lccn, debug=False):
     makes the top of the image black in order to remove the newspaper title
     """
     print("blanking out the top off the image")
-    #TODO find the last row that is mostly white and use that to calculate how much to turn black
+    #TODO find the last row of the title banner
     temp_img = np.copy(img)
     for row in range(0,950):
-        temp_img[row] = np.zeros(temp_img[row].shape)
+        temp_img[row] = np.full(temp_img[row].shape, 255)
     if debug:
-        cv2.imwrite('debugFiles\%s-blankedout.tiff' % lccn, temp_img)
+        filepath = os.path.join('debugFiles', '%s-blankedout.tiff' % lccn)
+        cv2.imwrite(filepath, temp_img)
     return temp_img
 
 def convertToGrayscale(img, lccn, debug=False):
     print("converting to greyscale")
     temp_img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     if debug:
-        cv2.imwrite('debugFiles\%s-invert.tiff' % lccn, temp_img)
+        filepath = os.path.join('debugFiles', '%s-greyscale.tiff' % lccn)
+        cv2.imwrite(filepath, temp_img)
     return temp_img
 
 def invert(img, lccn, debug=False):
@@ -57,7 +59,8 @@ def invert(img, lccn, debug=False):
     print("invert image")
     _,temp_img = cv2.threshold(img, 140, 255, cv2.THRESH_BINARY_INV)
     if debug:
-        cv2.imwrite('debugFiles\%s-invert.tiff' % lccn, temp_img)
+        filepath = os.path.join('debugFiles', '%s-invert.tiff' % lccn)
+        cv2.imwrite(filepath, temp_img)
     return temp_img
     
 def removeNoise(img, lccn, debug=False):
@@ -73,14 +76,19 @@ def removeNoise(img, lccn, debug=False):
        [1, 1, 0, 1, 1]], dtype=np.uint8)
     temp_img = cv2.morphologyEx(img, cv2.MORPH_OPEN, noiseKernel)
     if debug:
-        cv2.imwrite('debugFiles\%s-removeNoise.tiff' % lccn, temp_img)
+        filepath = os.path.join('debugFiles', '%s-removeNoise.tiff' % lccn)
+        cv2.imwrite(filepath, temp_img)
     return temp_img
 
 def findEdges(img, lccn, debug=False):
+    """
+    basically draws a line around found white objects
+    """
     print("get edges")
     temp_img = cv2.Canny(img, 30, 200)
     if debug:
-        cv2.imwrite('debugFiles\%s-canny.tiff' % lccn, temp_img)
+        filepath = os.path.join('debugFiles', '%s-canny.tiff' % lccn)
+        cv2.imwrite(filepath, temp_img)
     return temp_img
 
 def dilateDirection(img, lccn, debug=False):
@@ -96,7 +104,8 @@ def dilateDirection(img, lccn, debug=False):
     temp_img = cv2.dilate(img, kernel, iterations=10)
    
     if debug:
-        cv2.imwrite('debugFiles\%s-dilation.tiff' % lccn, temp_img)
+        filepath = os.path.join('debugFiles', '%s-dilation.tiff' % lccn)
+        cv2.imwrite(filepath, temp_img)
     return temp_img
 
 def closeDirection(img, lccn, debug=False):
@@ -106,7 +115,8 @@ def closeDirection(img, lccn, debug=False):
     print("applying closing morph")
     temp_img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
     if debug:
-        cv2.imwrite('debugFiles\%s-close.tiff' % lccn, temp_img)
+        filepath = os.path.join('debugFiles', '%s-close.tiff' % lccn)
+        cv2.imwrite(filepath, temp_img)
     return temp_img
 
 def findContours(img, lccn, debug=False):
@@ -117,7 +127,6 @@ def findContours(img, lccn, debug=False):
     
     temp_img = convertToGrayscale(img, lccn, debug=debug)
     temp_img = invert(temp_img, lccn, debug=debug)
-    temp_img = blankOutTopOfImage(temp_img, lccn, debug=debug)
     #temp_img = findEdges(temp_img, lccn, debug=debug)
     temp_img = dilateDirection(temp_img, lccn, debug=debug)
     temp_img = closeDirection(temp_img, lccn, debug=debug)
@@ -135,14 +144,16 @@ def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
     boxed = np.copy(img)
     green = (0, 255, 0)
     lineThickness = 3
-    padding = 10 #padding to add around the found contour
+    padding = 10 #padding to add around the found contour to help account for image skew and such
     
     for component in zip(contours, hierarchy[0]):
         contour = component[0]
         currentHierarchy = component[1]
         x,y,w,h = cv2.boundingRect(contour)
+        #TODO check if boundbox is COMPLETELY within already found bounding box? This could remove duplicate boxes within columns?
         if currentHierarchy[3] < 0: #outer most contour
-            if h > 100 and w > 450:
+            if h > 100 and w > 450: #in general columns will be about 450 pixels wide, and we should make sure we aren't getting crazy small ones, 
+                                    #so minimum of 100 pixels tall
                 filepath = os.path.join(directory, '%s_x%s_y%s_w%s_h%s-next%s_prev%s_child%s_parent%s.tiff' % (lccn, x,y,w,h, currentHierarchy[0], currentHierarchy[1], currentHierarchy[2], currentHierarchy[3]))
                 ystart = max(y-padding, 0)
                 yend = min(y+h+padding, img.shape[0])
@@ -150,7 +161,7 @@ def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
                 xend = min(x+w+padding, img.shape[1])
                 crop_img = img[ystart:yend, xstart:xend]
                 if not os.path.exists(filepath):
-                    print("writing out cropped image: [%s]", filepath)
+                    print("writing out cropped image: ", filepath)
                     cv2.imwrite(filepath, crop_img)
                 if debug:
                     #draw this specific bounding box on the copy of the image
@@ -158,7 +169,7 @@ def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
                     
 
     if debug:
-        filepath = os.path.join(directory, '%s-contours.tiff' % lccn)
+        filepath = os.path.join('debugFiles', '%s-contours.tiff' % lccn)
         #cv2.drawContours(boxed, contours, -1, green, lineThickness) #use this to draw all found contours
         cv2.imwrite(filepath, boxed)
 
@@ -169,8 +180,11 @@ if __name__ == "__main__":
     create_intermediate_images=True
     if create_intermediate_images and not os.path.exists('debugFiles'):
         os.makedirs('debugFiles')
-    contours, hierarchy = findContours(img, lccn, debug=create_intermediate_images)
-    output_directory = "words"
+    
+    #TODO detect if img is a title page and only then blank out the top
+    temp_img = blankOutTopOfImage(img, lccn, debug=create_intermediate_images)
+    contours, hierarchy = findContours(temp_img, lccn, debug=create_intermediate_images)
+    output_directory = "columns"
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     createTextTiles(img, lccn, contours, hierarchy, output_directory, debug=create_intermediate_images)
