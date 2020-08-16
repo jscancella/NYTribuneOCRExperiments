@@ -36,7 +36,8 @@ def blankOutTopOfImage(img, lccn, debug=False):
     print("blanking out the top off the image")
     #TODO find the last row of the title banner
     temp_img = np.copy(img)
-    for row in range(0,950):
+    for row in range(0,950): #about right for title page
+    #for row in range(0,250): #about right for other NY tribune pages
         temp_img[row] = np.full(temp_img[row].shape, 255)
     if debug:
         filepath = os.path.join('debugFiles', '%s-blankedout.tiff' % lccn)
@@ -79,17 +80,6 @@ def removeNoise(img, lccn, debug=False):
         cv2.imwrite(filepath, temp_img)
     return temp_img
 
-def findEdges(img, lccn, debug=False):
-    """
-    basically draws a line around found white objects
-    """
-    print("get edges")
-    temp_img = cv2.Canny(img, 30, 200)
-    if debug:
-        filepath = os.path.join('debugFiles', '%s-canny.tiff' % lccn)
-        cv2.imwrite(filepath, temp_img)
-    return temp_img
-
 def dilateDirection(img, lccn, debug=False):
     """
     It is just opposite of erosion. Here, a pixel element is '1' if atleast one pixel under the kernel is '1'. 
@@ -100,7 +90,7 @@ def dilateDirection(img, lccn, debug=False):
     It is also useful in joining broken parts of an object. 
     """
     print("applying dilation morph")
-    temp_img = cv2.dilate(img, kernel, iterations=10)
+    temp_img = cv2.dilate(img, kernel, iterations=15)
    
     if debug:
         filepath = os.path.join('debugFiles', '%s-dilation.tiff' % lccn)
@@ -126,12 +116,11 @@ def findContours(img, lccn, debug=False):
     
     temp_img = convertToGrayscale(img, lccn, debug=debug)
     temp_img = invert(temp_img, lccn, debug=debug)
-    #temp_img = findEdges(temp_img, lccn, debug=debug)
     temp_img = dilateDirection(temp_img, lccn, debug=debug)
     temp_img = closeDirection(temp_img, lccn, debug=debug)
     temp_img = removeNoise(temp_img, lccn, debug=debug)
 
-#TODO use RETR_LIST instead of RETR_TREE so we don't waste time building a hierarchy
+#TODO use RETR_LIST instead of RETR_TREE so we don't waste time building a hierarchy?
     contours, hierarchy = cv2.findContours(temp_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     return contours, hierarchy
 
@@ -177,6 +166,9 @@ def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
 if __name__ == "__main__":
     print("reading test image")
     img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-frontpage.jp2'))
+    #img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-page2.jp2'))
+    #img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-page3.jp2'))
+    #img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-page4.jp2'))
     lccn = "sn83030212"
     create_intermediate_images=True
     if create_intermediate_images and not os.path.exists('debugFiles'):
@@ -184,6 +176,10 @@ if __name__ == "__main__":
     
     #TODO detect if img is a title page and only then blank out the top
     temp_img = blankOutTopOfImage(img, lccn, debug=create_intermediate_images)
+    
+    #TODO split into very rough expected column and run findContours on that keeping only those that are at least 3/4 width of column?
+    #that should provide better bounding boxes and ignore tall skinny vertical lines and sub bounding boxes
+    
     contours, hierarchy = findContours(temp_img, lccn, debug=create_intermediate_images)
     output_directory = "columns"
     if not os.path.exists(output_directory):
