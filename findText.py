@@ -1,7 +1,8 @@
 import os
+from pathlib import Path
 os.environ['OPENCV_IO_ENABLE_JASPER']='True' #has to be set before importing cv2 otherwise it won't read the variable
 import cv2
-import numpy as np 
+import numpy as np
 
 #Items to tweak if needed for different results
 MIN_COLUMN_WIDTH=450 #what to consider is the minimum width of a column. Anything smaller will be rejected
@@ -10,6 +11,8 @@ LINE_THICKNESS = 3 #how thick to make the line around the found contours in the 
 PADDING = 10 #padding to add around the found contour(possible column) to help account for image skew and such
 LAST_LINE_OF_TOP_OF_IMAGE = 1000 #only check up to this line for possible lines or title
 LINE_LENGTH_TO_REMOVE = 1000 #any line that is this long or longer will be removed from the top of the image
+CREATE_INTERMEDIATE_IMAGES=False #create debug files that show how each step is transforming the image.
+BATCH_LOCATION = 'F:/dlc_gritty_ver01' #directory to start in to find the .jp2 files to process
 
 """
 # Cross-shaped Kernel
@@ -47,7 +50,7 @@ CLOSE_KERNEL = NOISE_KERNEL
 BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
        
-def blankOutTopOfImage(img, lccn, debug=False):
+def blankOutTopOfImage(img, basename, debugOutputDirectory, debug=False):
     """
     assume the image has already been inverted and closed,
     try and find the bounding box around the title or top line and remove it by making it black
@@ -66,42 +69,42 @@ def blankOutTopOfImage(img, lccn, debug=False):
             temp_img = cv2.rectangle(temp_img,(x,0),(x+w,y+h), BLACK, fillRectangle)
     
     if debug:
-        filepath = os.path.join('debugFiles', '%s-blankedout.tiff' % lccn)
+        filepath = os.path.join(debugOutputDirectory, '%s-blankedout.tiff' % basename)
         cv2.imwrite(filepath, temp_img)
     
     return temp_img
 
-def convertToGrayscale(img, lccn, debug=False):
+def convertToGrayscale(img, basename, debugOutputDirectory, debug=False):
     print("converting to greyscale")
     temp_img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     if debug:
-        filepath = os.path.join('debugFiles', '%s-greyscale.tiff' % lccn)
+        filepath = os.path.join(debugOutputDirectory, '%s-greyscale.tiff' % basename)
         cv2.imwrite(filepath, temp_img)
     return temp_img
 
-def invert(img, lccn, debug=False):
+def invert(img, basename, debugOutputDirectory, debug=False):
     """
     Black becomes white in the image
     """
     print("invert image")
     _,temp_img = cv2.threshold(img, 140, 255, cv2.THRESH_BINARY_INV)
     if debug:
-        filepath = os.path.join('debugFiles', '%s-invert.tiff' % lccn)
+        filepath = os.path.join(debugOutputDirectory, '%s-invert.tiff' % basename)
         cv2.imwrite(filepath, temp_img)
     return temp_img
     
-def removeNoise(img, lccn, debug=False):
+def removeNoise(img, basename, debugOutputDirectory, debug=False):
     """
     erosion followed by dilation. It is useful in removing noise
     """
     print("remove noise")
     temp_img = cv2.morphologyEx(img, cv2.MORPH_OPEN, NOISE_KERNEL)
     if debug:
-        filepath = os.path.join('debugFiles', '%s-removeNoise.tiff' % lccn)
+        filepath = os.path.join(debugOutputDirectory, '%s-removeNoise.tiff' % basename)
         cv2.imwrite(filepath, temp_img)
     return temp_img
 
-def dilateDirection(img, lccn, debug=False):
+def dilateDirection(img, basename, debugOutputDirectory, debug=False):
     """
     It is just opposite of erosion. Here, a pixel element is '1' if atleast one pixel under the kernel is '1'. 
     So it increases the white region in the image or size of foreground object increases. 
@@ -114,39 +117,39 @@ def dilateDirection(img, lccn, debug=False):
     temp_img = cv2.dilate(img, DILATE_KERNEL, iterations=15) #the more iterations the more the text gets stretched in the Y axis, 15 seems about right.
    
     if debug:
-        filepath = os.path.join('debugFiles', '%s-dilation.tiff' % lccn)
+        filepath = os.path.join(debugOutputDirectory, '%s-dilation.tiff' % basename)
         cv2.imwrite(filepath, temp_img)
     return temp_img
 
-def closeDirection(img, lccn, debug=False):
+def closeDirection(img, basename, debugOutputDirectory, debug=False):
     """
     Dilation followed by Erosion. It is useful in closing small holes inside the foreground objects, or small black points on the object
     """
     print("applying closing morph")
     temp_img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, CLOSE_KERNEL)
     if debug:
-        filepath = os.path.join('debugFiles', '%s-close.tiff' % lccn)
+        filepath = os.path.join(debugOutputDirectory, '%s-close.tiff' % basename)
         cv2.imwrite(filepath, temp_img)
     return temp_img
 
-def findContours(img, lccn, debug=False):
+def findContours(img, basename, debugOutputDirectory, debug=False):
     """
     Takes an image and performs a number of transformations on it to find the areas where there is (possibly) text
     It then returns these areas (contours) as well as the hierarchy of the areas.
     """
     
-    temp_img = convertToGrayscale(img, lccn, debug=debug)
-    temp_img = invert(temp_img, lccn, debug=debug)
-    temp_img = closeDirection(temp_img, lccn, debug=debug)
-    temp_img = blankOutTopOfImage(temp_img, lccn, debug=debug)
-    temp_img = dilateDirection(temp_img, lccn, debug=debug)
-    temp_img = removeNoise(temp_img, lccn, debug=debug)
+    temp_img = convertToGrayscale(img, basename, debugOutputDirectory, debug=debug)
+    temp_img = invert(temp_img, basename, debugOutputDirectory, debug=debug)
+    temp_img = closeDirection(temp_img, basename, debugOutputDirectory, debug=debug)
+    temp_img = blankOutTopOfImage(temp_img, basename, debugOutputDirectory, debug=debug)
+    temp_img = dilateDirection(temp_img, basename, debugOutputDirectory, debug=debug)
+    temp_img = removeNoise(temp_img, basename, debugOutputDirectory, debug=debug)
 
 #TODO use RETR_LIST instead of RETR_TREE so we don't waste time building a hierarchy?
     contours, hierarchy = cv2.findContours(temp_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     return contours, hierarchy
 
-def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
+def createTextTiles(img, basename, contours, hierarchy, directory, debug=False):
     """
     creates a bunch of tiles that are boxes around the found contours
     """
@@ -163,7 +166,7 @@ def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
         if parentContour == doesNotExist: #outer most contour
             if h > MIN_COLUMN_HEIGHT and w > MIN_COLUMN_WIDTH: #in general columns will be about 450 pixels wide, and we should make sure we aren't getting crazy small ones, 
                                     #so minimum of 100 pixels tall
-                filepath = os.path.join(directory, '%s_x%s_y%s_w%s_h%s.tiff' % (lccn, x,y,w,h))
+                filepath = os.path.join(directory, '%s_x%s_y%s_w%s_h%s.tiff' % (basename, x,y,w,h))
                 ystart = max(y-PADDING, 0)
                 yend = min(y+h+PADDING, img.shape[0])
                 xstart = max(x-PADDING, 0)
@@ -178,27 +181,30 @@ def createTextTiles(img, lccn, contours, hierarchy, directory, debug=False):
                     
 
     if debug:
-        filepath = os.path.join('debugFiles', '%s-contours.tiff' % lccn)
+        filepath = os.path.join(debugOutputDirectory, '%s-contours.tiff' % basename)
         #cv2.drawContours(boxed, contours, -1, green, LINE_THICKNESS) #use this to draw all found contours
         cv2.imwrite(filepath, boxed)
 
 if __name__ == "__main__":
-    print("reading test image")
-    #img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-frontpage.jp2'))
-    #img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-page2.jp2'))
-    #img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-page3.jp2'))
-    #img = cv2.imread(os.path.abspath('./testFiles/newYorkTribune/sn83030212-1841-04-10-page4.jp2'))
-    img = cv2.imread('F:/dlc_gritty_ver01/data/sn83030213/00206530170/1842080101/0001.jp2')
-    lccn = "sn83030212"
-    create_intermediate_images=True
-    if create_intermediate_images and not os.path.exists('debugFiles'):
-        os.makedirs('debugFiles')
+    #DEBUG: to test by running on a single file, uncomment below, and comment out the for loops
+    # root = 'F:/dlc_gritty_ver01/data/sn83030213/00206530170/1842080101'
+    # file = '0001.jp2'
+    # fullPath = os.path.join(root, file)
+    # print('processing file: ', fullPath)
+    # basename = Path(file).stem
+    # img = cv2.imread(fullPath)
+    # contours, hierarchy = findContours(img, basename, root, debug=CREATE_INTERMEDIATE_IMAGES)
+    # createTextTiles(img, basename, contours, hierarchy, root, debug=CREATE_INTERMEDIATE_IMAGES)
+        
+    for root,dirs,files in os.walk(BATCH_LOCATION):
+        for file in files:
+            if file.lower().endswith('.jp2'):
+                fullPath = os.path.join(root, file)
+                print('processing file: ', fullPath)
+                basename = Path(file).stem
+                img = cv2.imread(fullPath)
+                contours, hierarchy = findContours(img, basename, root, debug=CREATE_INTERMEDIATE_IMAGES)
+                createTextTiles(img, basename, contours, hierarchy, root, debug=CREATE_INTERMEDIATE_IMAGES)
+    print("finished")
     
-    #TODO split into very rough expected column and run findContours on that keeping only those that are at least 3/4 width of column?
-    #that should provide better bounding boxes and ignore tall skinny vertical lines and sub bounding boxes
     
-    contours, hierarchy = findContours(img, lccn, debug=create_intermediate_images)
-    output_directory = "columns"
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
-    createTextTiles(img, lccn, contours, hierarchy, output_directory, debug=create_intermediate_images)
