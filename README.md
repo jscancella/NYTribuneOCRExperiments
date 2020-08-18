@@ -1,13 +1,14 @@
 # Find Columns
 This repo is an experiment to see if I can use openCV to generate pretty good cropped images of newspaper columns
 
-#running on windows
+# running on windows
 * open powershell
 * run env\Scripts\activate.ps1
+* modify any needed variables (at the top of the `findText.py` script)
 * run `python.exe .\findText.py`
-* look at `columns` folder for output and `debugFiles` folder for intermidiate steps done to the image to find columns
+* find the generated `.hocr` and `.txt` files that contain the OCR pulled from the found columns
 
-#process workflow
+# process workflow
 * Stage 1
 	* try and remove banner or long lines because when we morph the image it causes areas to connect that shouldn't and ruins the find contours step
 		* we find the contours, and any that match a certain width and are in the "top" (can be adjusted) are used to blank out the image in that area.
