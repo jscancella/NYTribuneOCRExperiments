@@ -3,6 +3,8 @@ from pathlib import Path
 os.environ['OPENCV_IO_ENABLE_JASPER']='True' #has to be set before importing cv2 otherwise it won't read the variable
 import cv2
 import numpy as np
+from multiprocessing import Pool
+import subprocess
 
 #Items to tweak if needed for different results
 MIN_COLUMN_WIDTH=450 #what to consider is the minimum width of a column. Anything smaller will be rejected
@@ -13,6 +15,7 @@ LAST_LINE_OF_TOP_OF_IMAGE = 1000 #only check up to this line for possible lines 
 LINE_LENGTH_TO_REMOVE = 1000 #any line that is this long or longer will be removed from the top of the image
 CREATE_INTERMEDIATE_IMAGES=False #create debug files that show how each step is transforming the image.
 BATCH_LOCATION = 'F:/dlc_gritty_ver01' #directory to start in to find the .jp2 files to process
+TESSERACT = 'C:/Program Files/Tesseract-OCR/tesseract.exe'
 
 """
 # Cross-shaped Kernel
@@ -147,64 +150,66 @@ def findContours(img, basename, debugOutputDirectory, debug=False):
 
 #TODO use RETR_LIST instead of RETR_TREE so we don't waste time building a hierarchy?
     contours, hierarchy = cv2.findContours(temp_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    return contours, hierarchy
+    return contours
 
-def createTextTiles(img, basename, contours, hierarchy, directory, debug=False):
+def createTextTiles(img, basename, contours, directory, debug=False):
     """
     creates a bunch of tiles that are boxes around the found contours
     """
     print("creating cropped images")
     boxed = np.copy(img)
     
-    for component in zip(contours, hierarchy[0]):
-        contour = component[0]
-        currentHierarchy = component[1]
+    files = []
+    
+    for contour in contours:
         x,y,w,h = cv2.boundingRect(contour)
         #TODO check if boundbox is COMPLETELY within already found bounding box? This could remove duplicate boxes within columns?
-        parentContour = currentHierarchy[3] #the structure of the contour hierarchy is (next, previous, first child, parent)
-        doesNotExist = -1 #this is how openCV defines that the contour hierarchy item doesn't exist
-        if parentContour == doesNotExist: #outer most contour
-            if h > MIN_COLUMN_HEIGHT and w > MIN_COLUMN_WIDTH: #in general columns will be about 450 pixels wide, and we should make sure we aren't getting crazy small ones, 
-                                    #so minimum of 100 pixels tall
-                filepath = os.path.join(directory, '%s_x%s_y%s_w%s_h%s.tiff' % (basename, x,y,w,h))
-                ystart = max(y-PADDING, 0)
-                yend = min(y+h+PADDING, img.shape[0])
-                xstart = max(x-PADDING, 0)
-                xend = min(x+w+PADDING, img.shape[1])
-                crop_img = img[ystart:yend, xstart:xend]
-                if not os.path.exists(filepath):
-                    print("writing out cropped image: ", filepath)
-                    cv2.imwrite(filepath, crop_img)
-                if debug:
-                    #draw this specific bounding box on the copy of the image
-                    cv2.rectangle(boxed,(xstart,ystart),(xend,yend), GREEN, LINE_THICKNESS)
+        if h > MIN_COLUMN_HEIGHT and w > MIN_COLUMN_WIDTH: #in general columns will be about 450 pixels wide, and we should make sure we aren't getting crazy small ones, 
+                                #so minimum of 100 pixels tall
+            filepath = os.path.join(directory, '%s_x%s_y%s_w%s_h%s.tiff' % (basename, x,y,w,h))
+            files.append(filepath)
+            ystart = max(y-PADDING, 0)
+            yend = min(y+h+PADDING, img.shape[0])
+            xstart = max(x-PADDING, 0)
+            xend = min(x+w+PADDING, img.shape[1])
+            crop_img = img[ystart:yend, xstart:xend]
+            if not os.path.exists(filepath):
+                print("writing out cropped image: ", filepath)
+                cv2.imwrite(filepath, crop_img)
+            if debug:
+                #draw this specific bounding box on the copy of the image
+                cv2.rectangle(boxed,(xstart,ystart),(xend,yend), GREEN, LINE_THICKNESS)
                     
 
     if debug:
         filepath = os.path.join(debugOutputDirectory, '%s-contours.tiff' % basename)
         #cv2.drawContours(boxed, contours, -1, green, LINE_THICKNESS) #use this to draw all found contours
         cv2.imwrite(filepath, boxed)
+        
+    return files
+        
+def createOCRFiles(img, basename, directory, debug=False):
+    contours = findContours(img, basename, directory, debug=debug)
+    files = createTextTiles(img, basename, contours, directory, debug=debug)
+    for inputFile in files:
+        outputFile = os.path.join(directory, Path(inputFile).stem)
+        print('creating OCR files from: ', inputFile)
+        if not os.path.exists(outputFile + '.txt') or not os.path.exists(outputFile + '.hocr'):
+            subprocess.run([TESSERACT, inputFile, outputFile, 'hocr', 'txt'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not debug:
+            os.remove(inputFile) #we are done with the column image, so we delete it to save space
 
 if __name__ == "__main__":
-    #DEBUG: to test by running on a single file, uncomment below, and comment out the for loops
-    # root = 'F:/dlc_gritty_ver01/data/sn83030213/00206530170/1842080101'
-    # file = '0001.jp2'
-    # fullPath = os.path.join(root, file)
-    # print('processing file: ', fullPath)
-    # basename = Path(file).stem
-    # img = cv2.imread(fullPath)
-    # contours, hierarchy = findContours(img, basename, root, debug=CREATE_INTERMEDIATE_IMAGES)
-    # createTextTiles(img, basename, contours, hierarchy, root, debug=CREATE_INTERMEDIATE_IMAGES)
-        
-    for root,dirs,files in os.walk(BATCH_LOCATION):
-        for file in files:
-            if file.lower().endswith('.jp2'):
-                fullPath = os.path.join(root, file)
-                print('processing file: ', fullPath)
-                basename = Path(file).stem
-                img = cv2.imread(fullPath)
-                contours, hierarchy = findContours(img, basename, root, debug=CREATE_INTERMEDIATE_IMAGES)
-                createTextTiles(img, basename, contours, hierarchy, root, debug=CREATE_INTERMEDIATE_IMAGES)
+    with Pool(10) as p:
+        # p.map(doOcr, commands)
+        for root,dirs,files in os.walk(BATCH_LOCATION):
+            for file in files:
+                if file.lower().endswith('.jp2'): #TODO ignore images at the F:\dlc_gritty_ver01\data\sn83030212\00206530157\ directory level as they are just for quality and don't contain newspaper pages
+                    fullPath = os.path.join(root, file)
+                    print('processing file: ', fullPath)
+                    basename = Path(file).stem
+                    img = cv2.imread(fullPath)
+                    p.map(createOCRFiles, [img, basename, root, CREATE_INTERMEDIATE_IMAGES])
     print("finished")
     
     
