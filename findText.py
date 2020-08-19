@@ -188,28 +188,33 @@ def createTextTiles(img, basename, contours, directory, debug=False):
         
     return files
         
-def createOCRFiles(img, basename, directory, debug=False):
-    contours = findContours(img, basename, directory, debug=debug)
-    files = createTextTiles(img, basename, contours, directory, debug=debug)
+def createOCRFiles(dirFilePair):
+    directory = dirFilePair[0]
+    file = dirFilePair[1]
+    fullPath = os.path.join(directory, file)
+    print('processing file: ', fullPath)
+    basename = Path(file).stem
+    img = cv2.imread(fullPath)
+
+    contours = findContours(img, basename, directory, debug=CREATE_INTERMEDIATE_IMAGES)
+    files = createTextTiles(img, basename, contours, directory, debug=CREATE_INTERMEDIATE_IMAGES)
     for inputFile in files:
         outputFile = os.path.join(directory, Path(inputFile).stem)
         print('creating OCR files from: ', inputFile)
         if not os.path.exists(outputFile + '.txt') or not os.path.exists(outputFile + '.hocr'):
             subprocess.run([TESSERACT, inputFile, outputFile, 'hocr', 'txt'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if not debug:
+        if not CREATE_INTERMEDIATE_IMAGES:
             os.remove(inputFile) #we are done with the column image, so we delete it to save space
 
 if __name__ == "__main__":
     with Pool(10) as p:
-        # p.map(doOcr, commands)
+        filesToProcess = []
         for root,dirs,files in os.walk(BATCH_LOCATION):
             for file in files:
                 if file.lower().endswith('.jp2'): #TODO ignore images at the F:\dlc_gritty_ver01\data\sn83030212\00206530157\ directory level as they are just for quality and don't contain newspaper pages
-                    fullPath = os.path.join(root, file)
-                    print('processing file: ', fullPath)
-                    basename = Path(file).stem
-                    img = cv2.imread(fullPath)
-                    p.map(createOCRFiles, [img, basename, root, CREATE_INTERMEDIATE_IMAGES])
+                    filesToProcess.append([root, file])
+        
+        p.map(createOCRFiles, filesToProcess)
     print("finished")
     
     
