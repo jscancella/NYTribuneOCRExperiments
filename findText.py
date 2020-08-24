@@ -182,7 +182,7 @@ def createTextTiles(img, basename, contours, directory, debug=False):
                     
 
     if debug:
-        filepath = os.path.join(debugOutputDirectory, '%s-contours.tiff' % basename)
+        filepath = os.path.join(directory, '%s-contours.tiff' % basename)
         #cv2.drawContours(boxed, contours, -1, green, LINE_THICKNESS) #use this to draw all found contours
         cv2.imwrite(filepath, boxed)
         
