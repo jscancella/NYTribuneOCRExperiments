@@ -69,8 +69,8 @@ def combineHocrFiles(batch_dir):
             fixPageTitle(combinedSoup, maxOffset)
 
             #write out updated dom...
-            print("check out", os.path.join(root, fileNumber + ".xml"))
-            with open(os.path.join(root, fileNumber + ".xml"), 'w', encoding='utf8') as f:
+            print("check out", os.path.join(root, fileNumber + ".hocr"))
+            with open(os.path.join(root, fileNumber + ".hocr"), 'w', encoding='utf8') as f:
                 f.write(combinedSoup.prettify())
             
             #delete old hocr files?
