@@ -1,4 +1,5 @@
 import os
+import argparse
 from pathlib import Path
 import sys
 os.environ['OPENCV_IO_ENABLE_JASPER']='True' #has to be set before importing cv2 otherwise it won't read the variable
@@ -15,9 +16,10 @@ GREEN = (0, 255, 0)
 #parameters that can be tweaked
 LINE_THICKNESS = 3 #how thick to make the line around the found contours in the debug output
 PADDING = 10 #padding to add around the found possible column to help account for image skew and such
-BATCH_LOCATION = 'F:/dlc_gritty_ver01' #directory to start in to find the .jp2 files to process
+BATCH_LOCATION = 'E:/chronam/dlc_flavory_ver01' #directory to start in to find the .jp2 files to process
 TESSERACT = 'C:/Program Files/Tesseract-OCR/tesseract.exe'
 CREATE_COLUMN_OUTLINE_IMAGES = True #if we detect that we didn't find all the columns. Create a debug image (tiff) showing the columns that were found
+REMOVE_JP2_AFTER_PROCESSING = True #If we want to save space and remove the jp2 file after we are done processing the OCR
 
 def columnIndexes(a):
     """
@@ -90,7 +92,9 @@ def createColumnImages(img, basename, directory):
     if CREATE_COLUMN_OUTLINE_IMAGES:
         filepath = os.path.join(directory, '%s-contours.jpeg' % basename)
         cv2.imwrite(filepath, boxed, [cv2.IMWRITE_JPEG_QUALITY, 50])
-        #os.remove(os.path.join(directory, basename + ".jp2"))
+        
+    if REMOVE_JP2_AFTER_PROCESSING:
+        os.remove(os.path.join(directory, basename + ".jp2"))
             
     return files
     
@@ -109,14 +113,25 @@ def createOCRFiles(dirFilePair):
         if not os.path.exists(outputFile + '.txt') or not os.path.exists(outputFile + '.hocr'):
             subprocess.run([TESSERACT, inputFile, outputFile, 'hocr', 'txt'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             os.remove(inputFile) #we are done with the column image, so we delete it to save space
-
-if __name__ == "__main__":
+            
+def createColumnHocr(batch_dir):
     with Pool(8) as p:
         filesToProcess = []
-        for root,dirs,files in os.walk(BATCH_LOCATION):
+        for root,dirs,files in os.walk(batch_dir):
             for file in files:
                 if file.lower().endswith('.jp2'): #TODO ignore images at the F:\dlc_gritty_ver01\data\sn83030212\00206530157\ directory level as they are just for quality and don't contain newspaper pages
                     filesToProcess.append([root, file])
         
         p.map(createOCRFiles, filesToProcess)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Create columns of text and run OCR on them.')
+    parser.add_argument('--chronamdir', help='The directory of the chronicling america batch')
+    args = parser.parse_args()
+    
+    if args.chronamdir:
+        BATCH_LOCATION = args.chronamdir
+
+    createColumnHocr(BATCH_LOCATION)
+    
     print("finished")
